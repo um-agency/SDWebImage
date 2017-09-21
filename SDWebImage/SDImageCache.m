@@ -385,6 +385,79 @@ FOUNDATION_STATIC_INLINE NSUInteger SDCacheCostForImage(UIImage *image) {
     return SDScaledImageForKey(key, image);
 }
 
+- (NSString *)cacheKeyForUrl:(NSURL *)url size:(CGSize)size contentMode:(UIViewContentMode)contentMode cornerRadius:(CGFloat)cornerRadius {
+    if (!url.absoluteString) {
+        return nil;
+    }
+    
+    NSMutableString *cacheKey = [NSMutableString stringWithString:url.absoluteString];
+    
+    if (!CGSizeEqualToSize(size, CGSizeZero)) {
+        [cacheKey appendFormat:@"_finalSize_%.1f_%.1f", size.width, size.height];
+    }
+    
+    [cacheKey appendFormat:@"_contentMode_%li", contentMode];
+    
+    if (cornerRadius > 0.0) {
+        [cacheKey appendFormat:@"_cornerRadius_%.1f", cornerRadius];
+    }
+    
+    return cacheKey.length ? cacheKey : nil;
+}
+
+- (NSOperation *)queryCachesForImageUrl:(NSURL *)url size:(CGSize)size contentMode:(UIViewContentMode)contentMode cornerRadius:(CGFloat)cornerRadius done:(SDWebImageQueryCacheCompletedBlock)doneBlock {
+    if (!doneBlock) {
+        return nil;
+    }
+    
+    if (!url.absoluteString) {
+        doneBlock(nil, nil, SDImageCacheTypeNone);
+        return nil;
+    }
+    
+    NSString *originalImageKey = url.absoluteString;
+    NSString *transformedImageKey = [self cacheKeyForUrl:url size:size contentMode:contentMode cornerRadius:cornerRadius];
+    
+    if (!transformedImageKey) {
+        doneBlock(nil, nil, SDImageCacheTypeNone);
+        return nil;
+    }
+    
+    // First check the in-memory cache...
+    UIImage *image = [self imageFromMemoryCacheForKey:transformedImageKey];
+    if (image) {
+        doneBlock(nil, image, SDImageCacheTypeMemory);
+        return nil;
+    }
+    
+    image = [self imageFromMemoryCacheForKey:originalImageKey];
+    if (image) {
+        doneBlock(image, nil, SDImageCacheTypeMemory);
+        return nil;
+    }
+    
+    NSOperation *operation = [NSOperation new];
+    dispatch_async(self.ioQueue, ^{
+        if (operation.isCancelled) {
+            return;
+        }
+        
+        @autoreleasepool {
+            UIImage *diskImage = [self diskImageForKey:originalImageKey];
+            if (diskImage && self.shouldCacheImagesInMemory) {
+                NSUInteger cost = SDCacheCostForImage(diskImage);
+                [self.memCache setObject:diskImage forKey:originalImageKey cost:cost];
+            }
+            
+            dispatch_async(dispatch_get_main_queue(), ^{
+                doneBlock(diskImage, nil, SDImageCacheTypeDisk);
+            });
+        }
+    });
+    
+    return operation;
+}
+
 - (NSOperation *)queryDiskCacheForKey:(NSString *)key done:(SDWebImageQueryCompletedBlock)doneBlock {
     if (!doneBlock) {
         return nil;

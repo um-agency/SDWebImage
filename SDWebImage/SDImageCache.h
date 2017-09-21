@@ -26,6 +26,8 @@ typedef NS_ENUM(NSInteger, SDImageCacheType) {
 
 typedef void(^SDWebImageQueryCompletedBlock)(UIImage *image, SDImageCacheType cacheType);
 
+typedef void(^SDWebImageQueryCacheCompletedBlock)(UIImage *originalImage, UIImage *transformedImage, SDImageCacheType cacheType);
+
 typedef void(^SDWebImageCheckCacheCompletionBlock)(BOOL isInCache);
 
 typedef void(^SDWebImageCalculateSizeBlock)(NSUInteger fileCount, NSUInteger totalSize);
@@ -276,5 +278,9 @@ typedef void(^SDWebImageCalculateSizeBlock)(NSUInteger fileCount, NSUInteger tot
  *  @return the default cache path
  */
 - (NSString *)defaultCachePathForKey:(NSString *)key;
+
+- (NSString *)cacheKeyForUrl:(NSURL *)url size:(CGSize)size contentMode:(UIViewContentMode)contentMode cornerRadius:(CGFloat)cornerRadius;
+
+- (NSOperation *)queryCachesForImageUrl:(NSURL *)url size:(CGSize)size contentMode:(UIViewContentMode)contentMode cornerRadius:(CGFloat)cornerRadius done:(SDWebImageQueryCacheCompletedBlock)doneBlock;
 
 @end
