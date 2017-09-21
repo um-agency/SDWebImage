@@ -227,7 +227,7 @@
                     if (options & SDWebImageRefreshCached && originalImage && !downloadedImage) {
                         // Image refresh hit the NSURLCache cache, do not call the completion block
                     }
-                    else if (downloadedImage && (!downloadedImage.images || (options & SDWebImageTransformAnimatedImage)) && [self.delegate respondsToSelector:@selector(imageManager:transformDownloadedImage:withURL:)]) {
+                    else if (downloadedImage && (!downloadedImage.images || (options & SDWebImageTransformAnimatedImage)) && [self.delegate respondsToSelector:@selector(imageManager:transformDownloadedImage:withURL:size:contentMode:cornerRadius:)]) {
                         dispatch_async(dispatch_get_global_queue(DISPATCH_QUEUE_PRIORITY_HIGH, 0), ^{
                             UIImage *newTransformedImage = [self.delegate imageManager:self transformDownloadedImage:downloadedImage withURL:url size:finalSize contentMode:contentMode cornerRadius:cornerRadius];
                             
@@ -286,6 +286,41 @@
                     completedBlock(transformedImage, nil, cacheType, YES, url);
                 }
             });
+            @synchronized (self.runningOperations) {
+                [self.runningOperations removeObject:operation];
+            }
+        } else if (originalImage) {
+            if ([self.delegate respondsToSelector:@selector(imageManager:transformDownloadedImage:withURL:size:contentMode:cornerRadius:)]) {
+                dispatch_async(dispatch_get_global_queue(DISPATCH_QUEUE_PRIORITY_HIGH, 0), ^{
+                    UIImage *newTransformedImage = [self.delegate imageManager:self transformDownloadedImage:originalImage withURL:url size:finalSize contentMode:contentMode cornerRadius:cornerRadius];
+                    
+                    if (newTransformedImage) {
+                        BOOL imageWasTransformed = ![transformedImage isEqual:originalImage];
+                        if (imageWasTransformed) {
+                            NSLog(@"Cached image: %@", transformedImageKey);
+                            [self.imageCache storeImage:newTransformedImage forKey:transformedImageKey toDisk:NO];
+                        } else {
+                            NSLog(@"Cached image: %@", originalImageKey);
+                            [self.imageCache storeImage:originalImage forKey:originalImageKey toDisk:NO];
+                        }
+                    }
+                    
+                    UIImage *finalImage = newTransformedImage ? newTransformedImage : originalImage;
+                    dispatch_main_sync_safe(^{
+                        __strong __typeof(weakOperation) strongOperation = weakOperation;
+                        if (strongOperation && !strongOperation.isCancelled) {
+                            completedBlock(finalImage, nil, cacheType, YES, url);
+                        }
+                    });
+                });
+            } else {
+                dispatch_main_sync_safe(^{
+                    __strong __typeof(weakOperation) strongOperation = weakOperation;
+                    if (strongOperation && !strongOperation.isCancelled) {
+                        completedBlock(originalImage, nil, cacheType, YES, url);
+                    }
+                });
+            }
             @synchronized (self.runningOperations) {
                 [self.runningOperations removeObject:operation];
             }
